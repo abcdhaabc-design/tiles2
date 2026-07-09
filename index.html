@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>傷心絕望自卑之明</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+    
+    
+    <style>
+        html, body {
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            font-family: Arial, sans-serif;
+            display: flex; flex-direction: column;
+            background-color: #1a1a1a; color: #fff;
+        }
+
+        /* 頂部導覽列 */
+        .navbar { display: flex; background-color: #2c2c2c; border-bottom: 2px solid #444; z-index: 2000; overflow-x: auto; white-space: nowrap; }
+        .nav-btn {
+            flex: 1; padding: 15px 10px; background: none; border: none;
+            color: #aaa; font-size: 13px; font-weight: bold;
+            cursor: pointer; text-align: center; transition: 0.3s; flex-shrink: 0;
+        }
+        .nav-btn:hover { color: #fff; background-color: #3a3a3a; }
+        .nav-btn.active { color: #ffcc00; background-color: #1a1a1a; border-bottom: 3px solid #ffcc00; }
+
+        /* 頁面容器 */
+        .page-content { flex: 1; position: relative; height: calc(100vh - 53px); }
+        .page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; overflow-y: auto; }
+        .page.active { display: block; }
+
+        /* 地圖主區域 */
+        #map-container { width: 100%; height: 100%; position: relative; }
+        #map { width: 100%; height: 100%; }
+        
+        #drone-loader {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85); color: #ffcc00; padding: 8px 15px;
+            border-radius: 20px; font-size: 12px; font-weight: bold; z-index: 1000;
+            border: 1px solid #ffcc00; display: flex; align-items: center; gap: 8px;
+        }
+        .spinner {
+            width: 14px; height: 14px; border: 2px solid #ffcc00; border-top-color: transparent;
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 🎯 右上角極簡懸浮按鈕組 */
+        .map-controls-group {
+            position: absolute; top: 12px; right: 12px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .mini-map-btn {
+            background-color: #2c2c2c; color: #fff; border: 2px solid #444;
+            padding: 8px 12px; font-size: 12px; font-weight: bold; border-radius: 6px;
+            cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.5); transition: all 0.2s;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .mini-map-btn.active {
+            background-color: #ffcc00; color: #000; border-color: #ffcc00;
+        }
+        #btn-locate { background-color: #1a73e8; color: white; border: none; }
+
+        /* 地圖標籤 */
+        .marker-label {
+            background-color: rgba(255, 255, 255, 0.85) !important; border: 1px solid #333 !important;
+            border-radius: 4px !important; padding: 2px 6px !important; font-size: 11px !important;
+            font-weight: bold !important; color: #000 !important;
+        }
+        .leaflet-popup-content { color: #000 !important; font-size: 13px; line-height: 1.4; }
+
+        /* 計算機與工程表格通用樣式 */
+        .calc-container {
+            max-width: 650px; margin: 20px auto; padding: 20px; background-color: #222; 
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #333; box-sizing: border-box;
+        }
+        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .form-group.full, .full { grid-column: span 2; }
+        .form-group label { font-size: 13px; color: #ccc; margin-bottom: 4px; display: block; }
+        
+        input, select {
+            padding: 8px; background-color: #2a2a2a; border: 1px solid #444; color: #fff; 
+            border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box;
+        }
+        input:focus, select:focus { border-color: #ffcc00; outline: none; }
+        input[readonly] { background-color: #333 !important; color: #aaa !important; }
+        .yellow-input { background-color: #ffd633 !important; color: #000 !important; font-weight: bold; }
+        .blue-input { background-color: #1a3a5c !important; color: #fff !important; }
+
+        .result-box { margin-top: 15px; padding: 15px; background-color: #19241b; border-left: 4px solid #00ff66; border-radius: 0 4px 4px 0; }
+        .result-row { display: flex; justify-content: space-between; margin: 6px 0; font-size: 14px; }
+        .result-val { font-weight: bold; color: #00ff66; }
+        
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
+        .status-local { background-color: #113344; color: #00aaff; }
+
+        .table-container { padding: 20px; box-sizing: border-box; max-width: 850px; margin: 0 auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+        th, td { padding: 10px; border-bottom: 1px solid #333; }
+        th { background-color: #222; color: #ffcc00; position: sticky; top: 0; }
+        
+        .action-btn {
+            background-color: #00aaff; color: #fff; border: none; padding: 5px 10px;
+            border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; margin-right: 4px;
+        }
+        .action-btn.green-btn { background-color: #22c55e; }
+
+        /* ✍️ 第4頁專用排版樣式 */
+        .manual-card {
+            max-width: 600px; margin: 25px auto; padding: 25px;
+            background-color: #222222; border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.6); border: 1px solid #333333;
+            box-sizing: border-box;
+        }
+        .manual-title { font-size: 20px; color: #ffaa00; font-weight: bold; margin-top: 0; margin-bottom: 20px; }
+        .section-subtitle { font-size: 15px; font-weight: bold; margin: 20px 0 12px 0; }
+        .manual-row { display: flex; gap: 15px; margin-bottom: 12px; }
+        .manual-field { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+        .manual-field label { font-size: 13px; color: #aaaaaa; }
+        .manual-field input { padding: 10px; font-size: 15px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <button id="btn-page-map" class="nav-btn active" onclick="switchPage('map-page')">🗺️ 1. 自殘之明內心地圖</button>
+        <button id="btn-page-table" class="nav-btn" onclick="switchPage('table-page')">📋 2. 憤怒之明站座標</button>
+        <button id="btn-page-slope" class="nav-btn" onclick="switchPage('slope-page')">📐 3. 自卑之明斜水 (CSV)</button>
+        <button id="btn-page-slope-manual" class="nav-btn" onclick="switchPage('slope-manual-page')">✍️ 4. 無敵之明斜水 (手動)</button>
+        <button id="btn-page-pile" class="nav-btn" onclick="switchPage('pile-page')">🏗️ 5. 痛苦之明樁 (角度尺)</button>
+        <button id="btn-page-pile-list" class="nav-btn" onclick="switchPage('pile-list-page')">📂 6. 傷心之明樁資料列表</button>
+        <button id="btn-page-pile-double" class="nav-btn" onclick="switchPage('pile-double-page')">🗼 7. 絕望之明樁 (4點頂底)</button>
+    </div>
+
+    <div class="page-content">
+
+        <div id="map-page" class="page active">
+            <div id="map-container">
+                <div id="drone-loader"><div class="spinner"></div> <span id="loader-text">正在讀取...</span></div>
+                <div id="map"></div>
+                <div class="map-controls-group">
+                    <button id="btn-mode-csv" class="mini-map-btn active" onclick="setMapMode('csv')">📍 吸附 CSV 點</button>
+                    <button id="btn-mode-hk80" class="mini-map-btn" onclick="setMapMode('hk80')">🌐 純逆算 HK80</button>
+                    <button id="btn-locate" class="mini-map-btn">🎯 我的位置</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="table-page" class="page">
+            <div class="table-container">
+                <h3 style="margin: 0 0 10px 0; color: #ffcc00;">📍 HK80 本地數據觀測表</h3>
+                <div id="local-status" class="status-badge status-local">讀取本機 stn1.csv 中...</div>
+                <table>
+                    <thead>
+                        <tr><th>PtNo</th><th>Easting (E)</th><th>Northing (N)</th><th>RL</th></tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="slope-page" class="page">
+            <div class="calc-container">
+                <h2 style="margin-top:0; color:#ffcc00; border-bottom:1px solid #444; padding-bottom:8px;">📐 斜水/PHONE 現場覆核 (CSV)</h2>
+                <div class="calc-grid">
+                    <div class="form-group full">
+                        <label>📌 選擇斜水段 / 編號 (欄位 A)</label>
+                        <select id="slope-select" onchange="onSlopeNameChange()">
+                            <option value="">-- 請選擇斜水資料 --</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>設計腳 Easting (C)</label><input type="number" id="sc-e1" readonly></div>
+                    <div class="form-group"><label>設計腳 Northing (B)</label><input type="number" id="sc-n1" readonly></div>
+                    <div class="form-group full"><label>設計腳 高程 H1 (D)</label><input type="number" id="sc-h1" readonly></div>
+                    <div class="form-group"><label>方向頂點 Easting (F)</label><input type="number" id="sc-e2" readonly></div>
+                    <div class="form-group"><label>方向頂點 Northing (E)</label><input type="number" id="sc-n2" readonly></div>
+                    <div class="form-group full"><label>斜水角度 (G) (°)</label><input type="number" id="sc-angle" readonly></div>
+                    
+                    <div class="full" style="margin-top:10px;"><span style="color:#ffcc00; font-weight:bold;">📍 現場鏡座實測座標 (手入黃色格子)</span></div>
+                    <div class="form-group"><label>實測鏡座 Easting (E)</label><input type="number" id="sc-em" value="830584.884" step="0.001" class="yellow-input" oninput="calculateSlope()"></div>
+                    <div class="form-group"><label>實測鏡座 Northing (N)</label><input type="number" id="sc-nm" value="840186.001" step="0.001" class="yellow-input" oninput="calculateSlope()"></div>
+                    <div class="form-group full"><label>實測鏡座 Level (H)</label><input type="number" id="sc-hm" value="10.114" step="0.001" class="yellow-input" oninput="calculateSlope()"></div>
+                </div>
+                <div class="result-box">
+                    <h3 style="margin-top:0; color:#00ff66; font-size:16px;">📊 現場偏差分析結果</h3>
+                    <div class="result-row"><span>與斜面高低偏差 (上下斜面):</span><span class="result-val" id="out-v-dev">--</span></div>
+                    <div class="result-row"><span>與斜面出入偏差 (出入斜面):</span><span class="result-val" id="out-l-dev">--</span></div>
+                    <div class="result-row"><span>與定線O/S偏差 (左右偏差):</span><span class="result-val" id="out-t-dev">--</span></div>
+                    <hr style="border:0; border-top:1px solid #333; margin:8px 0;">
+                    <div class="result-row" style="font-size:14px; color:#ffcc00;"><span>🧭 設計 Alignment 方位角:</span><span id="out-bearing" style="color:#ffcc00; font-weight:bold;">--</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="slope-manual-page" class="page">
+            <div class="manual-card">
+                <div class="manual-title">✍️ 斜水現場覆核 (純手動應急輸入)</div>
+                <div class="section-subtitle" style="color: #ffaa00;">📋 手動輸入設計圖紙數據 (藍色格子)</div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>設計腳 Easting (E1)</label><input type="number" id="m-e1" value="830584.662" step="0.001" class="blue-input" oninput="calculateSlopeManual()"></div>
+                    <div class="manual-field"><label>設計腳 Northing (N1)</label><input type="number" id="m-n1" value="840188.146" step="0.001" class="blue-input" oninput="calculateSlopeManual()"></div>
+                </div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>設計腳 高程 Level (H1)</label><input type="number" id="m-h1" value="5.400" step="0.001" class="blue-input" oninput="calculateSlopeManual()"></div>
+                </div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>方向頂點 Easting (E2)</label><input type="number" id="m-e2" value="830584.485" step="0.001" class="blue-input" oninput="calculateSlopeManual()"></div>
+                    <div class="manual-field"><label>方向頂點 Northing (N2)</label><input type="number" id="m-n2" value="840187.829" step="0.001" class="blue-input" oninput="calculateSlopeManual()"></div>
+                </div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>設計斜水角度 (°)</label><input type="number" id="m-angle" value="70.0" step="0.1" class="blue-input" oninput="calculateSlopeManual()"></div>
+                </div>
+
+                <div class="section-subtitle" style="color: #ffcc00;">📍 現場鏡座實測座標 (手入黃色格子)</div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>實測鏡座 Easting (E)</label><input type="number" id="m-em" value="830584.884" step="0.001" class="yellow-input" oninput="calculateSlopeManual()"></div>
+                    <div class="manual-field"><label>實測鏡座 Northing (N)</label><input type="number" id="m-nm" value="840186.001" step="0.001" class="yellow-input" oninput="calculateSlopeManual()"></div>
+                </div>
+                <div class="manual-row">
+                    <div class="manual-field"><label>實測鏡座 Level (H)</label><input type="number" id="m-hm" value="10.114" step="0.001" class="yellow-input" oninput="calculateSlopeManual()"></div>
+                </div>
+
+                <div class="result-box" style="border-left-color: #ffaa00; background-color: #19241b; margin-top: 25px;">
+                    <h3 style="margin-top:0; color:#ffaa00; font-size:16px;">📊 應急手動計算結果</h3>
+                    <div class="result-row"><span>與斜面高低偏差 (上下斜面):</span><span class="result-val" id="m-out-v-dev" style="color:#ffaa00;">--</span></div>
+                    <div class="result-row"><span>與斜面出入偏差 (出入斜面):</span><span class="result-val" id="m-out-l-dev" style="color:#ffaa00;">--</span></div>
+                    <div class="result-row"><span>與定線O/S偏差 (左右偏差):</span><span class="result-val" id="m-out-t-dev" style="color:#ffaa00;">--</span></div>
+                    <hr style="border:0; border-top:1px solid #333; margin:12px 0;">
+                    <div class="result-row" style="font-size:14px; color:#ffcc00;"><span>👑 手動算出的 Alignment 方位角:</span><span id="m-out-bearing" style="color:#ffcc00; font-weight:bold;">--</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="pile-page" class="page">
+            <div class="calc-container">
+                <h2 style="margin-top:0; color:#00aaff; border-bottom:1px solid #444; padding-bottom:8px;">🏗️ 5. H-Pile 4點求中計算 (角度尺)</h2>
+                <div style="border: 1px solid #444; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
+                    <span style="color:#ffd633; font-weight:bold; font-size:14px;">📍 現場實測樁頂 4 點座標</span>
+                    <div class="calc-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 8px; gap: 8px;">
+                        <div class="form-group"><label>C1 E</label><input type="number" id="p-c1e" value="830755.123" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C1 N</label><input type="number" id="p-c1n" value="840325.092" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C1 Lv</label><input type="number" id="p-c1v" value="8.849" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C2 E</label><input type="number" id="p-c2e" value="830754.952" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C2 N</label><input type="number" id="p-c2n" value="840324.735" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C2 Lv</label><input type="number" id="p-c2v" value="8.844" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C3 E</label><input type="number" id="p-c3e" value="830754.558" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C3 N</label><input type="number" id="p-c3n" value="840324.934" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C3 Lv</label><input type="number" id="p-c3v" value="8.841" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C4 E</label><input type="number" id="p-c4e" value="830754.796" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C4 N</label><input type="number" id="p-c4n" value="840325.297" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>C4 Lv</label><input type="number" id="p-c4v" value="8.847" class="yellow-input" oninput="calculatePile()"></div>
+                    </div>
+                </div>
+                <div style="border: 1px solid #00aaff; padding: 12px; border-radius: 6px; margin-bottom: 15px; background-color: #122129;">
+                    <span style="color:#00aaff; font-weight:bold; font-size:14px;">📋 設計圖紙參數</span>
+                    <div class="calc-grid" style="margin-top: 8px;">
+                        <div class="form-group"><label>樁號</label><input type="text" id="p-pile-no" value="17" class="blue-input"></div>
+                        <div class="form-group"><label>✂️ CUT OFF LEVEL</label><input type="number" id="p-cut-level" value="6.100" style="background-color: #2b1a1a; color: #ff5555; font-weight: bold;" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>DESIGN EASTING (E)</label><input type="number" id="p-de" value="830754.874" class="blue-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>DESIGN NORTHING (N)</label><input type="number" id="p-dn" value="840325.021" class="blue-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>方向基準點 E</label><input type="number" id="p-be" value="830754.485" class="blue-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>方向基準點 N</label><input type="number" id="p-bn" value="840187.829" class="blue-input" oninput="calculatePile()"></div>
+                    </div>
+                </div>
+                <div style="border: 1px solid #ff9900; padding: 12px; border-radius: 6px; margin-bottom: 15px; background-color: #221710;">
+                    <span style="color:#ff9900; font-weight:bold; font-size:14px;">🧭 現場雙軸角度尺量度</span>
+                    <div class="calc-grid" style="margin-top: 8px;">
+                        <div class="form-group"><label>角度尺基準長度 (m)</label><input type="number" id="p-ruler-len" value="1.300" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group" style="visibility: hidden;"></div>
+                        <div class="form-group"><label>↕️ X O/S 軸角度 (°)</label><input type="number" id="p-angle-ch" value="89.5" class="yellow-input" oninput="calculatePile()"></div>
+                        <div class="form-group"><label>↔️ Y CH 軸角度 (°)</label><input type="number" id="p-angle-os" value="90.0" class="yellow-input" oninput="calculatePile()"></div>
+                    </div>
+                </div>
+                
+                <div class="result-box" style="background-color: #162229; border-left-color: #00aaff;">
+                    <h3 style="margin-top:0; color:#00aaff; font-size:16px;">📊 綜合計算結果</h3>
+                    <div class="result-row"><span>🧭 設計 Bearing:</span><span id="res-p-brg" style="color:#ffcc00; font-weight:bold;">--</span></div>
+                    <div class="result-row"><span>實測中心座標:</span><span id="res-p-top-coords" class="result-val" style="color:#fff;">--</span></div>
+                    <div class="result-row"><span>實測中心高程 (LV):</span><span id="res-p-top-lv" class="result-val" style="color:#fff;">--</span></div>
+                    <div class="result-row"><span>與設計原位偏差:</span><span id="res-p-top-dev" class="result-val">--</span></div>
+                    
+                    <hr style="border-top:1px dashed #333; margin: 10px 0;">
+                    <div style="font-size: 13px; color: #a1a1aa; margin-bottom: 10px;">
+                        <span style="color: #ffcc00; font-weight: bold; display: block; margin-bottom: 4px;">⭕ 樁身共圓幾何 R 值檢驗:</span>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 15px;">
+                            <div>組1 (C1,C2,C3) R1: <span id="res-p-r1" style="color: #00ff66; font-weight:bold;">--</span></div>
+                            <div>組2 (C2,C3,C4) R2: <span id="res-p-r2" style="color: #00ff66; font-weight:bold;">--</span></div>
+                            <div>組3 (C1,C2,C4) R3: <span id="res-p-r3" style="color: #00ff66; font-weight:bold;">--</span></div>
+                            <div>組4 (C1,C3,C4) R4: <span id="res-p-r4" style="color: #00ff66; font-weight:bold;">--</span></div>
+                        </div>
+                        <div style="margin-top: 6px; font-weight: bold;">平均求得半徑 (Avg R): <span id="res-p-ravg" style="color: #ffd633;">--</span></div>
+                    </div>
+                    
+                    <hr style="border-top:1px dashed #333; margin: 10px 0;">
+                    <div class="result-row"><span>截樁面中心座標:</span><span class="result-val" id="res-p-cut-coords" style="color:#ff9999;">--</span></div>
+                    <div class="result-row"><span>截樁面位置偏差:</span><span class="result-val" id="res-p-cut-dev" style="color:#ff9999;">--</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="pile-list-page" class="page">
+            <div class="table-container">
+                <h3 style="margin: 0 0 10px 0; color: #00aaff;">🏗️ 樁基礎數據清單 (pile.csv)</h3>
+                <div id="pile-status" class="status-badge status-local">正在讀取 pile.csv...</div>
+                <table>
+                    <thead>
+                        <tr><th>樁號</th><th>Easting (E)</th><th>Northing (N)</th><th>Cut-Off Level (RL)</th><th>方向基準點 E</th><th>方向基準點 N</th><th>智能操作按鈕</th></tr>
+                    </thead>
+                    <tbody id="pile-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="pile-double-page" class="page">
+            <div class="calc-container">
+                <h2 style="margin-top:0; color:#22c55e; border-bottom:1px solid #444; padding-bottom:8px;">🗼 7. H-Pile 雙層(頂底4點)求中計算</h2>
+                
+                <div style="border: 1px solid #22c55e; padding: 12px; border-radius: 6px; margin-bottom: 15px; background-color: #0f2115;">
+                    <span style="color:#22c55e; font-weight:bold; font-size:14px;">🔼 現場實測【頂層】 4 點座標</span>
+                    <div class="calc-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 8px; gap: 8px;">
+                        <div class="form-group"><label>頂 C1 E</label><input type="number" id="pd-c1e" value="830755.123" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C1 N</label><input type="number" id="pd-c1n" value="840325.092" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C1 Lv</label><input type="number" id="pd-c1v" value="8.849" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>頂 C2 E</label><input type="number" id="pd-c2e" value="830754.952" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C2 N</label><input type="number" id="pd-c2n" value="840324.735" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C2 Lv</label><input type="number" id="pd-c2v" value="8.844" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>頂 C3 E</label><input type="number" id="pd-c3e" value="830754.558" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C3 N</label><input type="number" id="pd-c3n" value="840324.934" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C3 Lv</label><input type="number" id="pd-c3v" value="8.841" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>頂 C4 E</label><input type="number" id="pd-c4e" value="830754.796" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C4 N</label><input type="number" id="pd-c4n" value="840325.297" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>頂 C4 Lv</label><input type="number" id="pd-c4v" value="8.847" class="yellow-input" oninput="calculateDoublePile()"></div>
+                    </div>
+                </div>
+
+                <div style="border: 1px solid #3b82f6; padding: 12px; border-radius: 6px; margin-bottom: 15px; background-color: #0f172a;">
+                    <span style="color:#3b82f6; font-weight:bold; font-size:14px;">🔽 現場實測【底層】 4 點座標</span>
+                    <div class="calc-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 8px; gap: 8px;">
+                        <div class="form-group"><label>底 B1 E</label><input type="number" id="pd-b1e" value="830755.150" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B1 N</label><input type="number" id="pd-b1n" value="840325.110" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B1 Lv</label><input type="number" id="pd-b1v" value="4.210" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>底 B2 E</label><input type="number" id="pd-b2e" value="830754.980" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B2 N</label><input type="number" id="pd-b2n" value="840324.750" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B2 Lv</label><input type="number" id="pd-b2v" value="4.205" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>底 B3 E</label><input type="number" id="pd-b3e" value="830754.580" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B3 N</label><input type="number" id="pd-b3n" value="840324.950" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B3 Lv</label><input type="number" id="pd-b3v" value="4.200" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        
+                        <div class="form-group"><label>底 B4 E</label><input type="number" id="pd-b4e" value="830754.820" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B4 N</label><input type="number" id="pd-b4n" value="840325.320" class="yellow-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>底 B4 Lv</label><input type="number" id="pd-b4v" value="4.208" class="yellow-input" oninput="calculateDoublePile()"></div>
+                    </div>
+                </div>
+
+                <div style="border: 1px solid #a855f7; padding: 12px; border-radius: 6px; margin-bottom: 15px; background-color: #21152b;">
+                    <span style="color:#a855f7; font-weight:bold; font-size:14px;">📋 設計圖紙參數</span>
+                    <div class="calc-grid" style="margin-top: 8px;">
+                        <div class="form-group"><label>樁號</label><input type="text" id="pd-pile-no" value="17" class="blue-input"></div>
+                        <div class="form-group"><label>✂️ CUT OFF LEVEL</label><input type="number" id="pd-cut-level" value="6.100" style="background-color: #2b1a1a; color: #ff5555; font-weight: bold;" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>DESIGN EASTING (E)</label><input type="number" id="pd-de" value="830754.874" class="blue-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>DESIGN NORTHING (N)</label><input type="number" id="pd-dn" value="840325.021" class="blue-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>方向基準點 E</label><input type="number" id="pd-be" value="830754.485" class="blue-input" oninput="calculateDoublePile()"></div>
+                        <div class="form-group"><label>方向基準點 N</label><input type="number" id="pd-bn" value="840187.829" class="blue-input" oninput="calculateDoublePile()"></div>
+                    </div>
+                </div>
+
+                <div class="result-box" style="background-color: #142419; border-left-color: #22c55e;">
+                    <h3 style="margin-top:0; color:#22c55e; font-size:16px;">📊 雙層頂底求中計算結果</h3>
+                    <div class="result-row"><span>🧭 設計 Bearing:</span><span id="res-pd-brg" style="color:#ffcc00; font-weight:bold;">--</span></div>
+                    <div class="result-row"><span>實測【頂層】中心座標:</span><span id="res-pd-top-coords" class="result-val" style="color:#fff;">--</span></div>
+                    <div class="result-row"><span>實測【底層】中心座標:</span><span id="res-pd-bot-coords" class="result-val" style="color:#fff;">--</span></div>
+                    
+                    <hr style="border-top:1px dashed #333; margin: 10px 0;">
+                    <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">
+                        <span style="color: #22c55e; font-weight: bold; display: block; margin-bottom: 4px;">⭕ 頂層幾何 R 值檢驗:</span>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 15px;">
+                            <div>組1 R1: <span id="res-pd-tr1" style="color:#4ade80;">--</span></div><div>組2 R2: <span id="res-pd-tr2" style="color:#4ade80;">--</span></div>
+                            <div>組3 R3: <span id="res-pd-tr3" style="color:#4ade80;">--</span></div><div>組4 R4: <span id="res-pd-tr4" style="color:#4ade80;">--</span></div>
+                        </div>
+                        <div style="font-weight:bold; margin-top:2px;">頂層平均半徑 (Top Avg R): <span id="res-pd-travg" style="color:#ffd633;">--</span></div>
+                    </div>
+
+                    <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">
+                        <span style="color: #3b82f6; font-weight: bold; display: block; margin-bottom: 4px;">⭕ 底層幾何 R 值檢驗:</span>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 15px;">
+                            <div>組1 R1: <span id="res-pd-br1" style="color:#60a5fa;">--</span></div><div>組2 R2: <span id="res-pd-br2" style="color:#60a5fa;">--</span></div>
+                            <div>組3 R3: <span id="res-pd-br3" style="color:#60a5fa;">--</span></div><div>組4 R4: <span id="res-pd-br4" style="color:#60a5fa;">--</span></div>
+                        </div>
+                        <div style="font-weight:bold; margin-top:2px;">底層平均半徑 (Bot Avg R): <span id="res-pd-bavg" style="color:#ffd633;">--</span></div>
+                    </div>
+                    
+                    <hr style="border-top:1px dashed #333; margin: 10px 0;">
+                    <div class="result-row"><span>🎯 內插/外推至 Cut-off Level 中心點:</span><span class="result-val" id="res-pd-cut-coords" style="color:#ff9999; font-size:15px;">--</span></div>
+                    <div class="result-row"><span>📐 Cut-off 截樁面最終位置偏差:</span><span class="result-val" id="res-pd-cut-dev" style="color:#ff9999; font-size:15px; font-weight:bold;">--</span></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const DRONE_LOADER_TEXT = "正在讀取並疊加最新無人機切片圖層...";
+        const HK80_DEF = "+proj=tmerc +lat_0=22.31213333333334 +lon_0=114.1785555555556 +k=1 +x_0=836694.05 +y_0=819065.38 +ellps=intl +towgs84=-162.619,-276.959,-161.764,0.067753,-2.243649,-1.158827,-1.094246 +units=m +no_defs";
+        const WGS84_DEF = "+proj=longlat +datum=WGS84 +no_defs";
+
+        let map;
+        let currentMode = 'csv'; 
+        let slopeDataRecords = []; 
+        let csvStationPoints = []; 
+        let gpsMarker = null, gpsCircle = null;
+
+        function switchPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            
+            let btnMap = {
+                'map-page': 'btn-page-map', 'table-page': 'btn-page-table',
+                'slope-page': 'btn-page-slope', 'slope-manual-page': 'btn-page-slope-manual',
+                'pile-page': 'btn-page-pile', 'pile-list-page': 'btn-page-pile-list',
+                'pile-double-page': 'btn-page-pile-double'
+            };
+            if(btnMap[pageId]) document.getElementById(btnMap[pageId]).classList.add('active');
+            if(pageId === 'map-page' && map) { setTimeout(() => { map.invalidateSize(); }, 200); }
+        }
+
+        function setMapMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-mode-csv').classList.remove('active');
+            document.getElementById('btn-mode-hk80').classList.remove('active');
+            if (mode === 'csv') {
+                document.getElementById('btn-mode-csv').classList.add('active');
+            } else {
+                document.getElementById('btn-mode-hk80').classList.add('active');
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('loader-text').innerText = DRONE_LOADER_TEXT; 
+            initMap();
+            loadDroneTiles(); 
+            loadLocalSTN1();    
+            loadLocalSlopeCSV(); 
+            initGpsFeature(); 
+            calculatePile(); 
+            calculateSlopeManual(); 
+            loadPileCSV(); 
+            calculateDoublePile();
+        });
+
+        function initMap() {
+            map = L.map('map', { touchZoom: true, tap: true, dragging: true }).setView([22.4952, 114.1255], 16);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21 }).addTo(map);
+
+            map.on('click', function(e) {
+                const lat = e.latlng.lat; const lng = e.latlng.lng;
+                try {
+                    const hk80Coords = proj4(WGS84_DEF, HK80_DEF, [lng, lat]);
+                    const clickE = hk80Coords[0] - 1; const clickN = hk80Coords[1] + 5.5;
+                    let popupContent = "";
+
+                    if (currentMode === 'csv') {
+                        if (csvStationPoints.length > 0) {
+                            let closestPt = null; let minDistance = Infinity;
+                            csvStationPoints.forEach(pt => {
+                                const dist = Math.sqrt(Math.pow(pt.easting - clickE, 2) + Math.pow(pt.northing - clickN, 2));
+                                if (dist < minDistance) { minDistance = dist; closestPt = pt; }
+                            });
+                            if (closestPt && minDistance < 25) {
+                                popupContent = `
+                                    <div style="padding: 2px;">
+                                        <strong style="color: #00ff66;">📋 附近 CSV 測量站點</strong><br>
+                                        <hr style="margin: 4px 0; border:0; border-top:1px solid #ddd;">
+                                        <b>點號 (PtNo):</b> <span style="color:#d946ef; font-weight:bold;">${closestPt.ptNo}</span><br>
+                                        <b>CSV 東行 (E):</b> ${closestPt.easting.toFixed(3)}<br>
+                                        <b>CSV 北行 (N):</b> ${closestPt.northing.toFixed(3)}<br>
+                                        <b style="color:#00aaff;">CSV 高程 (RL):</b> <span style="color:#00ff66; font-weight:bold;">${closestPt.rl} m</span><br>
+                                        <span style="font-size:10px; color:#777;">吸附誤差: ${minDistance.toFixed(1)}m</span>
+                                    </div>`;
+                            }
+                        }
+                        if (!popupContent) popupContent = `<div style="padding:2px; color:#888;">❌ 周圍 25 米內無 stn1.csv 資料</div>`;
+                    } else {
+                        popupContent = `
+                            <div style="padding: 2px;">
+                                <strong style="color: #1a73e8;">🌐 地圖點選逆算結果</strong><br>
+                                <hr style="margin: 4px 0; border:0; border-top:1px solid #ddd;">
+                                <b>Easting (E):</b> <span style="font-weight:bold;">${clickE.toFixed(3)}</span><br>
+                                <b>Northing (N):</b> <span style="font-weight:bold;">${clickN.toFixed(3)}</span><br>
+                                <b>基準設計高程:</b> 6.500 m<br>
+                            </div>`;
+                    }
+                    L.popup().setLatLng(e.latlng).setContent(popupContent).openOn(map);
+                } catch(err) { console.error(err); }
+            });
+        }
+
+        function loadDroneTiles() {
+    try {
+        // 🔹 圖層 1：對應 GitHub 上的 file1 資料夾
+        // 這裡的路徑使用相對於 index.html 的位置，因為 file1 在同目錄下
+        const droneLayer1 = L.tileLayer('./file1/{z}/{x}/{y}.png', { 
+            minZoom: 12, 
+            maxZoom: 22, 
+            maxNativeZoom: 20, 
+            opacity: 0.85 
+        });
+        droneLayer1.addTo(map);
+
+        // 🎯 圖層 2：對應 GitHub 上的 file2 資料夾
+        const droneLayer2 = L.tileLayer('./file2/{z}/{x}/{y}.png', { 
+            minZoom: 12, 
+            maxZoom: 22, 
+            maxNativeZoom: 22, 
+            opacity: 0.85 
+        });
+        droneLayer2.addTo(map);
+
+        console.log("🚀 兩份無人機空拍圖層已成功掛載！");
+
+    } catch (err) { 
+        console.error("載入圖層時發生錯誤：", err); 
+    }
+}
+
+
+        function initGpsFeature() {
+            document.getElementById('btn-locate').addEventListener('click', () => {
+                if (!navigator.geolocation) { alert('設備不支援 GPS'); return; }
+                document.getElementById('btn-locate').innerText = '⏳...';
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        document.getElementById('btn-locate').innerText = '🎯 我的位置';
+                        const lat = position.coords.latitude; const lng = position.coords.longitude;
+                        if (gpsMarker) map.removeLayer(gpsMarker);
+                        if (gpsCircle) map.removeLayer(gpsCircle);
+                        map.setView([lat, lng], 18);
+                        gpsCircle = L.circle([lat, lng], { radius: position.coords.accuracy, color: '#1a73e8', fillOpacity: 0.1, weight: 1 }).addTo(map);
+                        gpsMarker = L.marker([lat, lng]).addTo(map).bindPopup(`GPS 誤差: ${position.coords.accuracy.toFixed(1)}m`).openPopup();
+                    },
+                    () => { document.getElementById('btn-locate').innerText = '❌ 失敗'; },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            });
+        }
+
+        function hk80ToWgs84(easting, northing) {
+            try {
+                const result = proj4(HK80_DEF, WGS84_DEF, [easting + 1, northing - 5.5]);
+                return { lat: result[1], lng: result[0] };
+            } catch (e) { return { lat: 22.4952, lng: 114.1255 }; }
+        }
+
+        function loadLocalSTN1() {
+            fetch('./stn1.csv').then(res => res.text()).then(text => {
+                document.getElementById('local-status').innerText = "本地 stn1.csv 讀取成功";
+                document.getElementById('local-status').style.backgroundColor = "#114422";
+                parseAndRenderMapCsv(text);
+            }).catch(() => {
+                document.getElementById('local-status').innerText = "未檢測到 stn1.csv";
+                document.getElementById('local-status').style.backgroundColor = "#551111";
+            });
+        }
+
+        function parseAndRenderMapCsv(csvText) {
+            const lines = csvText.split('\n');
+            const tableBody = document.getElementById('table-body'); if (!tableBody) return;
+            tableBody.innerHTML = ''; csvStationPoints = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim(); if (!line) continue;
+                const columns = line.split(','); if (columns.length < 3) continue; 
+                const ptNo = columns[0].trim(); const northing = parseFloat(columns[1]); const easting = parseFloat(columns[2]); const rl = columns[3] ? columns[3].trim() : '0.000';
+                if (!isNaN(easting) && !isNaN(northing)) {
+                    csvStationPoints.push({ ptNo, easting, northing, rl: parseFloat(rl).toFixed(3) });
+                    tableBody.innerHTML += `<tr><td><b>${ptNo}</b></td><td>${easting.toFixed(3)}</td><td>${northing.toFixed(3)}</td><td>${rl}</td></tr>`;
+                    const wgs = hk80ToWgs84(easting, northing);
+                    const marker = L.marker([wgs.lat, wgs.lng]).addTo(map);
+                    marker.bindTooltip(ptNo, { permanent: true, direction: 'top', className: 'marker-label' });
+                }
+            }
+        }
+
+        function loadLocalSlopeCSV() {
+            fetch('./slope_data.csv').then(res => res.text()).then(text => {
+                const lines = text.split('\n'); const selectEl = document.getElementById('slope-select'); if (!selectEl) return;
+                slopeDataRecords = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(','); if (cols.length < 7) continue;
+                    const name = cols[0].trim();
+                    slopeDataRecords.push({ name, e1: parseFloat(cols[2]), n1: parseFloat(cols[1]), h1: parseFloat(cols[3]), e2: parseFloat(cols[5]), n2: parseFloat(cols[4]), angle: parseFloat(cols[6]) });
+                    selectEl.innerHTML += `<option value="${name}">${name}</option>`;
+                }
+            }).catch(()=>{});
+        }
+
+        function onSlopeNameChange() {
+            const matched = slopeDataRecords.find(r => r.name === document.getElementById('slope-select').value); if (!matched) return;
+            document.getElementById('sc-e1').value = matched.e1; document.getElementById('sc-n1').value = matched.n1; document.getElementById('sc-h1').value = matched.h1;
+            document.getElementById('sc-e2').value = matched.e2; document.getElementById('sc-n2').value = matched.n2; document.getElementById('sc-angle').value = matched.angle;
+            calculateSlope();
+        }
+
+        function convertToDMS(brgRad) {
+            let brgDeg = (brgRad * 180) / Math.PI; if (brgDeg < 0) brgDeg += 360;
+            const d = Math.floor(brgDeg); const mFull = (brgDeg - d) * 60; const m = Math.floor(mFull); const s = Math.round((mFull - m) * 60);
+            return `${d}° ${m}' ${s}"`;
+        }
+
+        function findCircleCenterAndR(x1, y1, x2, y2, x3, y3) {
+            const d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)); if (Math.abs(d) < 0.000001) return null;
+            const ux = ((x1*x1 + y1*y1) * (y2 - y3) + (x2*x2 + y2*y2) * (y3 - y1) + (x3*x3 + y3*y3) * (y1 - y2)) / d;
+            const uy = ((x1*x1 + y1*y1) * (x3 - x2) + (x2*x2 + y2*y2) * (x1 - x3) + (x3*x3 + y3*y3) * (x2 - x1)) / d;
+            const r = Math.sqrt((ux - x1)*(ux - x1) + (uy - y1)*(uy - y1));
+            return { e: ux, n: uy, r: r };
+        }
+
+        function runCoreSlopeCalc(e1, n1, h1, e2, n2, angleDeg, em, nm, hm) {
+            const de = e2 - e1; const dn = n2 - n1; const planDist = Math.sqrt(de * de + dn * dn); if (planDist === 0) return null;
+            const cosB = dn / planDist; const sinB = de / planDist;
+            const transDeviation = ((em - e1) * cosB - (nm - n1) * sinB); 
+            const alignmentDist = ((nm - n1) * cosB + (em - e1) * sinB); 
+            const vertDeviation = hm - (h1 + (alignmentDist * Math.tan((angleDeg * Math.PI) / 180))); 
+            
+            const vVal = Math.round(vertDeviation * 1000);
+            const lVal = Math.round((vertDeviation / Math.tan((angleDeg * Math.PI) / 180)) * 1000);
+            const tVal = Math.round(transDeviation * 1000);
+
+            const vTxt = vVal >= 0 ? `高了 (上斜面) +${vVal} mm` : `低了 (下斜面) ${vVal} mm`;
+            const lTxt = lVal >= 0 ? `出了 (出斜面) +${lVal} mm` : `入了 (入斜面) ${lVal} mm`;
+            const tTxt = tVal >= 0 ? `向了右 +${tVal} mm` : `向了左 ${tVal} mm`;
+
+            return { vTxt, lTxt, tTxt, bearing: convertToDMS(Math.atan2(de, dn)), validLong: Math.tan((angleDeg * Math.PI) / 180) !== 0 };
+        }
+
+        function calculateSlope() {
+            const res = runCoreSlopeCalc(parseFloat(document.getElementById('sc-e1').value), parseFloat(document.getElementById('sc-n1').value), parseFloat(document.getElementById('sc-h1').value), parseFloat(document.getElementById('sc-e2').value), parseFloat(document.getElementById('sc-n2').value), parseFloat(document.getElementById('sc-angle').value), parseFloat(document.getElementById('sc-em').value), parseFloat(document.getElementById('sc-nm').value), parseFloat(document.getElementById('sc-hm').value));
+            if(!res) return;
+            document.getElementById('out-v-dev').innerText = res.vTxt; document.getElementById('out-l-dev').innerText = res.validLong ? res.lTxt : '無法推算'; document.getElementById('out-t-dev').innerText = res.tTxt; document.getElementById('out-bearing').innerText = res.bearing;
+        }
+
+        function calculateSlopeManual() {
+            const res = runCoreSlopeCalc(parseFloat(document.getElementById('m-e1').value), parseFloat(document.getElementById('m-n1').value), parseFloat(document.getElementById('m-h1').value), parseFloat(document.getElementById('m-e2').value), parseFloat(document.getElementById('m-n2').value), parseFloat(document.getElementById('m-angle').value), parseFloat(document.getElementById('m-em').value), parseFloat(document.getElementById('m-nm').value), parseFloat(document.getElementById('m-hm').value));
+            if(!res) return;
+            document.getElementById('m-out-v-dev').innerText = res.vTxt; document.getElementById('m-out-l-dev').innerText = res.validLong ? res.lTxt : '無法推算'; document.getElementById('m-out-t-dev').innerText = res.tTxt; document.getElementById('m-out-bearing').innerText = res.bearing;
+        }
+
+        // 🏗️ 5. H-Pile 4點求中（角度尺版）
+        // 🏗️ 5. H-Pile 4點求中（角度尺版）- 已修正 180度 Bearing 與高程容錯
+function calculatePile() {
+    const c1e = parseFloat(document.getElementById('p-c1e').value);
+    const c1n = parseFloat(document.getElementById('p-c1n').value);
+    const c1v = parseFloat(document.getElementById('p-c1v').value);
+    const c2e = parseFloat(document.getElementById('p-c2e').value);
+    const c2n = parseFloat(document.getElementById('p-c2n').value);
+    const c2v = parseFloat(document.getElementById('p-c2v').value);
+    const c3e = parseFloat(document.getElementById('p-c3e').value);
+    const c3n = parseFloat(document.getElementById('p-c3n').value);
+    const c3v = parseFloat(document.getElementById('p-c3v').value); 
+    const c4e = parseFloat(document.getElementById('p-c4e').value);
+    const c4n = parseFloat(document.getElementById('p-c4n').value);
+    const c4v = parseFloat(document.getElementById('p-c4v').value);
+
+    const de = parseFloat(document.getElementById('p-de').value);
+    const dn = parseFloat(document.getElementById('p-dn').value);
+    const be = parseFloat(document.getElementById('p-be').value);
+    const bn = parseFloat(document.getElementById('p-bn').value);
+
+    const cutLevel = parseFloat(document.getElementById('p-cut-level').value);
+    const angleChDMS = parseFloat(document.getElementById('p-angle-ch').value);
+    const angleOsDMS = parseFloat(document.getElementById('p-angle-os').value);
+
+    if ([c1e, c1n, c2e, c2n, c3e, c3n, c4e, c4n, de, dn, be, bn, cutLevel, angleChDMS, angleOsDMS].some(isNaN)) return;
+
+    // 三點求圓心
+    const circ1 = findCircleCenterAndR(c1e, c1n, c2e, c2n, c3e, c3n);
+    const circ2 = findCircleCenterAndR(c2e, c2n, c3e, c3n, c4e, c4n);
+    const circ3 = findCircleCenterAndR(c1e, c1n, c2e, c2n, c4e, c4n);
+    const circ4 = findCircleCenterAndR(c1e, c1n, c3e, c3n, c4e, c4n);
+    if (!circ1 || !circ2 || !circ3 || !circ4) return;
+
+    document.getElementById('res-p-r1').innerText = circ1.r.toFixed(3) + " m";
+    document.getElementById('res-p-r2').innerText = circ2.r.toFixed(3) + " m";
+    document.getElementById('res-p-r3').innerText = circ3.r.toFixed(3) + " m";
+    document.getElementById('res-p-r4').innerText = circ4.r.toFixed(3) + " m";
+    const avgR = (circ1.r + circ2.r + circ3.r + circ4.r) / 4;
+    document.getElementById('res-p-ravg').innerText = avgR.toFixed(3) + " m";
+
+    // 實測求中中心點
+    const avgTopE = (circ1.e + circ2.e + circ3.e + circ4.e) / 4;
+    const avgTopN = (circ1.n + circ2.n + circ3.n + circ4.n) / 4;
+    document.getElementById('res-p-top-coords').innerText = `E: ${avgTopE.toFixed(3)} / N: ${avgTopN.toFixed(3)}`;
+
+    // 智能高程平均
+    let validLevels = [];
+    if (!isNaN(c1v)) validLevels.push(c1v);
+    if (!isNaN(c2v)) validLevels.push(c2v);
+    if (!isNaN(c3v)) validLevels.push(c3v);
+    if (!isNaN(c4v)) validLevels.push(c4v);
+    const avgTopV = validLevels.length > 0 ? (validLevels.reduce((a, b) => a + b, 0) / validLevels.length) : 0;
+    document.getElementById('res-p-top-lv').innerText = avgTopV.toFixed(3) + " m";
+
+    // 🎯 1. 建立正確的設計線方位角矩陣 (以 be - de, bn - dn 為正向)
+    const pde = be - de; 
+    const pdn = bn - dn;
+    const planDist = Math.sqrt(pde * pde + pdn * pdn);
+    if (planDist === 0) return;
+
+    const cosB = pdn / planDist; 
+    const sinB = pde / planDist;
+    document.getElementById('res-p-brg').innerText = convertToDMS(Math.atan2(pde, pdn));
+
+    // 🎯 2. 正確的測量局部坐標投影轉換 (對齊世界坐標至 Alignment 坐標系)
+    const meTop = avgTopE - de; 
+    const mnTop = avgTopN - dn;
+    
+    // 透過旋轉矩陣標準投影求出實測點相對於設計點的 CH 與 O/S
+    const chTop = meTop * sinB + mnTop * cosB;
+    const osTop = meTop * cosB - mnTop * sinB;
+    document.getElementById('res-p-top-dev').innerText = `CH: ${chTop.toFixed(3)} m / O/S: ${osTop.toFixed(3)} m`;
+
+    // 3. 雙軸角度尺結構傾斜投影計算至 Cut-off Level
+    const deltaH = avgTopV - cutLevel;
+    let shiftCH = (Math.abs(angleChDMS - 90) > 0.00001 && Math.tan(angleChDMS * Math.PI / 180) !== 0) ? (deltaH / Math.tan(angleChDMS * Math.PI / 180)) : 0;
+    let shiftOS = (Math.abs(angleOsDMS - 90) > 0.00001 && Math.tan(angleOsDMS * Math.PI / 180) !== 0) ? (deltaH / Math.tan(angleOsDMS * Math.PI / 180)) : 0;
+
+    const finalCH = chTop + shiftOS; 
+    const finalOS = osTop + shiftCH; 
+
+    // 🎯 4. 逆向推回設計 Cut-off 點的大地世界坐標
+    const cutE = de + (finalCH * sinB + finalOS * cosB);
+    const cutN = dn + (finalCH * cosB - finalOS * sinB);
+
+    document.getElementById('res-p-cut-coords').innerText = `E: ${cutE.toFixed(3)} / N: ${cutN.toFixed(3)}`;
+    document.getElementById('res-p-cut-dev').innerText = `CH: ${finalCH.toFixed(3)} m / O/S: ${finalOS.toFixed(3)} m`;
+}
+
+        // 🗼 7. H-Pile 雙層（頂底4點）求中精確計算函數 (已修正 Bearing, CH/OS 投影與高程容錯)
+// 🗼 7. H-Pile 雙層（頂底4點）求中精確計算函數 (已修復變數筆誤與高程容錯)
+function calculateDoublePile() {
+    // 頂層點讀取 (確認 HTML 的 id 是 pd-c1e, pd-c1n...)
+    const c1e = parseFloat(document.getElementById('pd-c1e').value); const c1n = parseFloat(document.getElementById('pd-c1n').value); const c1v = parseFloat(document.getElementById('pd-c1v').value);
+    const c2e = parseFloat(document.getElementById('pd-c2e').value); const c2n = parseFloat(document.getElementById('pd-c2n').value); const c2v = parseFloat(document.getElementById('pd-c2v').value);
+    const c3e = parseFloat(document.getElementById('pd-c3e').value); const c3n = parseFloat(document.getElementById('pd-c3n').value); const c3v = parseFloat(document.getElementById('pd-c3v').value);
+    const c4e = parseFloat(document.getElementById('pd-c4e').value); const c4n = parseFloat(document.getElementById('pd-c4n').value); const c4v = parseFloat(document.getElementById('pd-c4v').value);
+
+    // 底層點讀取 (確認 HTML 的 id 是 pd-b1e, pd-b1n...)
+    const b1e = parseFloat(document.getElementById('pd-b1e').value); const b1n = parseFloat(document.getElementById('pd-b1n').value); const b1v = parseFloat(document.getElementById('pd-b1v').value);
+    const b2e = parseFloat(document.getElementById('pd-b2e').value); const b2n = parseFloat(document.getElementById('pd-b2n').value); const b2v = parseFloat(document.getElementById('pd-b2v').value);
+    const b3e = parseFloat(document.getElementById('pd-b3e').value); const b3n = parseFloat(document.getElementById('pd-b3n').value); const b3v = parseFloat(document.getElementById('pd-b3v').value);
+    const b4e = parseFloat(document.getElementById('pd-b4e').value); const b4n = parseFloat(document.getElementById('pd-b4n').value); const b4v = parseFloat(document.getElementById('pd-b4v').value);
+
+    // 設計參數讀取
+    const de = parseFloat(document.getElementById('pd-de').value); const dn = parseFloat(document.getElementById('pd-dn').value);
+    const be = parseFloat(document.getElementById('pd-be').value); const bn = parseFloat(document.getElementById('pd-bn').value);
+    const cutLevel = parseFloat(document.getElementById('pd-cut-level').value);
+
+    // 安全檢查：鎖死必要的平面坐標與設計參數 (排除容易缺失的 c3v 和 b3v)
+    if ([c1e, c1n, c2e, c2n, c3e, c3n, c4e, c4n, b1e, b1n, b2e, b2n, b3e, b3n, b4e, b4n, de, dn, be, bn, cutLevel].some(isNaN)) return;
+
+    // 頂層 4 組共圓檢驗與求中
+    const tc1 = findCircleCenterAndR(c1e, c1n, c2e, c2n, c3e, c3n);
+    const tc2 = findCircleCenterAndR(c2e, c2n, c3e, c3n, c4e, c4n);
+    const tc3 = findCircleCenterAndR(c1e, c1n, c2e, c2n, c4e, c4n);
+    const tc4 = findCircleCenterAndR(c1e, c1n, c3e, c3n, c4e, c4n);
+    if (!tc1 || !tc2 || !tc3 || !tc4) return;
+
+    document.getElementById('res-pd-tr1').innerText = tc1.r.toFixed(3) + " m";
+    document.getElementById('res-pd-tr2').innerText = tc2.r.toFixed(3) + " m";
+    document.getElementById('res-pd-tr3').innerText = tc3.r.toFixed(3) + " m";
+    document.getElementById('res-pd-tr4').innerText = tc4.r.toFixed(3) + " m";
+    const avgTR = (tc1.r + tc2.r + tc3.r + tc4.r) / 4;
+    document.getElementById('res-pd-travg').innerText = avgTR.toFixed(3) + " m";
+
+    const avgTopE = (tc1.e + tc2.e + tc3.e + tc4.e) / 4; const avgTopN = (tc1.n + tc2.n + tc3.n + tc4.n) / 4;
+    
+    // 頂層動態高程平均邏輯 (已修正變數名稱筆誤)
+    let validTopLevels = [];
+    if (!isNaN(c1v)) validTopLevels.push(c1v);
+    if (!isNaN(c2v)) validTopLevels.push(c2v);
+    if (!isNaN(c3v)) validTopLevels.push(c3v);
+    if (!isNaN(c4v)) validTopLevels.push(c4v);
+    const avgTopV = validTopLevels.length > 0 ? (validTopLevels.reduce((a, b) => a + b, 0) / validTopLevels.length) : 0;
+    document.getElementById('res-pd-top-coords').innerText = `E: ${avgTopE.toFixed(3)} / N: ${avgTopN.toFixed(3)} / Lv: ${avgTopV.toFixed(3)}m`;
+
+    // 底層 4 組共圓檢驗與求中
+    const bc1 = findCircleCenterAndR(b1e, b1n, b2e, b2n, b3e, b3n);
+    const bc2 = findCircleCenterAndR(b2e, b2n, b3e, b3n, b4e, b4n);
+    const bc3 = findCircleCenterAndR(b1e, b1n, b2e, b2n, b4e, b4n);
+    const bc4 = findCircleCenterAndR(b1e, b1n, b3e, b3n, b4e, b4n);
+    if (!bc1 || !bc2 || !bc3 || !bc4) return;
+
+    document.getElementById('res-pd-br1').innerText = bc1.r.toFixed(3) + " m";
+    document.getElementById('res-pd-br2').innerText = bc2.r.toFixed(3) + " m";
+    document.getElementById('res-pd-br3').innerText = bc3.r.toFixed(3) + " m";
+    document.getElementById('res-pd-br4').innerText = bc4.r.toFixed(3) + " m";
+    const avgBR = (bc1.r + bc2.r + bc3.r + bc4.r) / 4;
+    document.getElementById('res-pd-bavg').innerText = avgBR.toFixed(3) + " m";
+
+    const avgBotE = (bc1.e + bc2.e + bc3.e + bc4.e) / 4; const avgBotN = (bc1.n + bc2.n + bc3.n + bc4.n) / 4;
+    
+    // 底層動態高程平均邏輯
+    let validBotLevels = [];
+    if (!isNaN(b1v)) validBotLevels.push(b1v);
+    if (!isNaN(b2v)) validBotLevels.push(b2v);
+    if (!isNaN(b3v)) validBotLevels.push(b3v);
+    if (!isNaN(b4v)) validBotLevels.push(b4v);
+    const avgBotV = validBotLevels.length > 0 ? (validBotLevels.reduce((a, b) => a + b, 0) / validBotLevels.length) : 0;
+    document.getElementById('res-pd-bot-coords').innerText = `E: ${avgBotE.toFixed(3)} / N: ${avgBotN.toFixed(3)} / Lv: ${avgBotV.toFixed(3)}m`;
+
+    // 建立正確的設計線方位角矩陣
+    const pde = be - de; 
+    const pdn = bn - dn;
+    const planDist = Math.sqrt(pde * pde + pdn * pdn);
+    if(planDist === 0) return;
+    
+    const cosB = pdn / planDist; 
+    const sinB = pde / planDist;
+    document.getElementById('res-pd-brg').innerText = convertToDMS(Math.atan2(pde, pdn));
+
+    // 利用頂底中心高差進行三維傾斜線形推算至 Cut-off Level
+    const totalHDiff = avgTopV - avgBotV;
+    if (Math.abs(totalHDiff) < 0.001) return; // 防止除以零
+
+    // 計算每米高差的 E 與 N 位移率量
+    const rateE = (avgTopE - avgBotE) / totalHDiff;
+    const rateN = (avgTopN - avgBotN) / totalHDiff;
+
+    // 從頂層向 Cut-off Level 推算外推交點座標
+    const targetHDiff = cutLevel - avgTopV; 
+    const cutE = avgTopE + (rateE * targetHDiff);
+    const cutN = avgTopN + (rateN * targetHDiff);
+
+    document.getElementById('res-pd-cut-coords').innerText = `E: ${cutE.toFixed(3)} / N: ${cutN.toFixed(3)}`;
+
+    // 正確的測量局部坐標投影轉換 求 CH / OS 最終施工偏差值
+    const meCut = cutE - de; 
+    const mnCut = cutN - dn;
+    const finalCH = meCut * sinB + mnCut * cosB;
+    const finalOS = meCut * cosB - mnCut * sinB;
+    
+    document.getElementById('res-pd-cut-dev').innerText = `CH: ${finalCH.toFixed(3)} m / O/S: ${finalOS.toFixed(3)} m`;
+}
+
+        // 📂 6. 讀取並渲染 pile.csv (包含新增加載到第 7 頁的雙核心按鈕)
+        function loadPileCSV() {
+            fetch('./pile.csv').then(res => res.text()).then(text => {
+                const lines = text.split(/\r?\n/); const tbody = document.getElementById('pile-table-body'); if(!tbody) return;
+                tbody.innerHTML = '';
+                document.getElementById('pile-status').innerText = "pile.csv 自動加載成功";
+                document.getElementById('pile-status').style.backgroundColor = "#114422";
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim(); if(!line) continue;
+                    const cols = line.split(','); if (cols.length < 4) continue;
+                    
+                    const pName = cols[0].trim(); 
+                    const pE = parseFloat(cols[1]); 
+                    const pN = parseFloat(cols[2]); 
+                    const pLv = parseFloat(cols[3]);
+                    
+                    const pBe = cols[4] ? parseFloat(cols[4]) : 830754.485;
+                    const pBn = cols[5] ? parseFloat(cols[5]) : 840187.829;
+
+                    if(!isNaN(pE) && !isNaN(pN)) {
+                        tbody.innerHTML += `
+                            <tr>
+                                <td><b>${pName}</b></td>
+                                <td>${pE.toFixed(3)}</td>
+                                <td>${pN.toFixed(3)}</td>
+                                <td>${pLv.toFixed(3)}</td>
+                                <td>${pBe.toFixed(3)}</td>
+                                <td>${pBn.toFixed(3)}</td>
+                                <td>
+                                    <button class="action-btn" onclick="injectPileToCalc('${pName}', ${pE}, ${pN}, ${pLv}, ${pBe}, ${pBn})">帶入第5頁 (角度尺) 🏗️</button>
+                                    <button class="action-btn green-btn" onclick="injectPileToDoubleCalc('${pName}', ${pE}, ${pN}, ${pLv}, ${pBe}, ${pBn})">帶入第7頁 (雙層頂底) 🗼</button>
+                                </td>
+                            </tr>`;
+                    }
+                }
+            }).catch(() => {
+                if(document.getElementById('pile-status')) {
+                    document.getElementById('pile-status').innerText = "未檢測到 pile.csv";
+                    document.getElementById('pile-status').style.backgroundColor = "#551111";
+                }
+            });
+        }
+
+        // 🎯 帶入第 5 頁核心填表邏輯
+        function injectPileToCalc(name, easting, northing, cutLevel, baseE, baseN) {
+            document.getElementById('p-pile-no').value = name;
+            document.getElementById('p-de').value = easting.toFixed(3); 
+            document.getElementById('p-dn').value = northing.toFixed(3); 
+            document.getElementById('p-cut-level').value = cutLevel.toFixed(3);
+            document.getElementById('p-be').value = baseE.toFixed(3);
+            document.getElementById('p-bn').value = baseN.toFixed(3);
+            
+            switchPage('pile-page'); 
+            calculatePile();
+        }
+
+        // 🎯 帶入第 7 頁核心填表與自動執行計算邏輯
+        function injectPileToDoubleCalc(name, easting, northing, cutLevel, baseE, baseN) {
+            document.getElementById('pd-pile-no').value = name;
+            document.getElementById('pd-de').value = easting.toFixed(3); 
+            document.getElementById('pd-dn').value = northing.toFixed(3); 
+            document.getElementById('pd-cut-level').value = cutLevel.toFixed(3);
+            document.getElementById('pd-be').value = baseE.toFixed(3);
+            document.getElementById('pd-bn').value = baseN.toFixed(3);
+            
+            switchPage('pile-double-page'); 
+            calculateDoublePile();
+        }
+    </script>
+</body>
+</html>
